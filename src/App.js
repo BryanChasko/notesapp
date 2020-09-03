@@ -6,10 +6,13 @@ import { listNotes } from "./graphql/queries";
 import { v4 as uuid } from "uuid";
 import { List, Input, Button } from "antd";
 import {
+  updateNote as UpdateNote,
   createNote as CreateNote,
   deleteNote as DeleteNote,
 } from "./graphql/mutations";
-
+import {
+  onCreateNote
+} from "./graphql/subscriptions";
 const CLIENT_ID = uuid();
 
 const initialState = {
@@ -56,6 +59,9 @@ export default function App() {
         actions={[
           <p style={styles.p} onClick={() => deleteNote(item)}>
             Delete
+          </p>,
+          <p style={styles.p} onClick={() => updateNote(item)}>
+            {item.completed ? "completed" : "mark completed"}
           </p>
         ]}
       >
@@ -69,7 +75,7 @@ export default function App() {
       return alert("please enter a name and description");
     }
     const note = { ...form, clientId: CLIENT_ID, completed: false, id: uuid() };
-    dispatch({ type: "ADD_NOTE", note });
+    /*dispatch({ type: "ADD_NOTE", note });*/
     dispatch({ type: "RESET_FORM" });
     try {
       await API.graphql({
@@ -77,6 +83,23 @@ export default function App() {
         variables: { input: note },
       });
       console.log("successfully created note");
+    } catch (error) {
+      console.log("error: ", error);
+    }
+  }
+  async function updateNote(note) {
+    const index = state.notes.findIndex((n) => n.id === note.id);
+    const notes = [...state.notes];
+    notes[index].completed = !note.completed;
+    dispatch({ type: "SET_NOTES", notes });
+    try {
+      await API.graphql({
+        query: UpdateNote,
+        variables: {
+          input: { id: note.id, completed: notes[index].completed },
+        },
+      });
+      console.log("note successfully updated");
     } catch (error) {
       console.log("error: ", error);
     }
@@ -91,7 +114,7 @@ export default function App() {
     try {
       await API.graphql({
         query: DeleteNote,
-        variables: { input: { id } }
+        variables: { input: { id } },
       });
       console.log("successfully deleted note");
     } catch (error) {
@@ -103,6 +126,15 @@ export default function App() {
   }
   useEffect(() => {
     fetchNotes();
+    const subscriptions = API.graphql({
+      query: onCreateNote
+    })
+      .subscribe({ next: noteData => {
+        const note = noteData.value.data.onCreateNote
+          if (CLIENT_ID === note.clientId) 
+          return dispatch({ type: "ADD_NOTE", note })
+      }})
+      return () => subscriptions.unsubscribe() 
   }, []);
   return (
     <div style={styles.container}>
